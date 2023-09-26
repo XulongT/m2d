@@ -32,8 +32,27 @@ def quantized_metrics(predicted_pkl_root, gt_pkl_root):
     
     gt_freatures_k = [np.load(os.path.join(gt_pkl_root, 'kinetic_features', pkl)) for pkl in os.listdir(os.path.join(gt_pkl_root, 'kinetic_features'))]
     gt_freatures_m = [np.load(os.path.join(gt_pkl_root, 'manual_features_new', pkl)) for pkl in os.listdir(os.path.join(gt_pkl_root, 'manual_features_new'))]
-    
-    
+
+    # check
+    print("jjcn\n")
+    kinetic_dir = os.path.join(predicted_pkl_root, 'kinetic_features')
+    print(f"Checking directory: {kinetic_dir}")
+    if os.path.exists(kinetic_dir):
+        print("Directory exists.")
+        files = os.listdir(kinetic_dir)
+        print(f"Number of files: {len(files)}")
+        if files:
+            print("Some files in the directory:", files[:5])  # Print first 5 files as a sample
+        else:
+            print("Directory is empty!")
+    else:
+        print("Directory does not exist!")
+
+    if not pred_features_k:
+        print("Warning: pred_features_k is empty!")
+    else:
+        pred_features_k = np.stack(pred_features_k)
+
     pred_features_k = np.stack(pred_features_k)  # Nx72 p40
     pred_features_m = np.stack(pred_features_m) # Nx32
     gt_freatures_k = np.stack(gt_freatures_k) # N' x 72 N' >> N
@@ -149,22 +168,27 @@ def calculate_avg_distance(feature_list, mean=None, std=None):
     return dist
 
 def calc_and_save_feats(root):
-    if not os.path.exists(os.path.join(root, 'kinetic_features')):
-        os.mkdir(os.path.join(root, 'kinetic_features'))
-    if not os.path.exists(os.path.join(root, 'manual_features_new')):
-        os.mkdir(os.path.join(root, 'manual_features_new'))
+    # if not os.path.exists(os.path.join(root, 'kinetic_features')):
+    #     os.mkdir(os.path.join(root, 'kinetic_features'))
+    # if not os.path.exists(os.path.join(root, 'manual_features_new')):
+    #     os.mkdir(os.path.join(root, 'manual_features_new'))
+    os.makedirs(os.path.join(root, 'kinetic_features'), exist_ok = True)
+    os.makedirs(os.path.join(root, 'manual_features_new'), exist_ok=True)
+
     
     # gt_list = []
     pred_list = []
 
     for pkl in os.listdir(root):
+        file_path = os.path.join(root, pkl)
+        print(f"Processing file: {file_path}")
         print(pkl)
         if os.path.isdir(os.path.join(root, pkl)):
             continue
         joint3d = np.load(os.path.join(root, pkl), allow_pickle=True).item()['pred_position'][:1200,:]
         # print(extract_manual_features(joint3d.reshape(-1, 24, 3)))
         roott = joint3d[:1, :3]  # the root Tx72 (Tx(24x3))
-        # print(roott)
+        print(roott)
         joint3d = joint3d - np.tile(roott, (1, 24))  # Calculate relative offset with respect to root
         # print('==============after fix root ============')
         # print(extract_manual_features(joint3d.reshape(-1, 24, 3)))
@@ -179,9 +203,12 @@ if __name__ == '__main__':
 
 
     gt_root = 'data/aist_features_zero_start'
-    pred_root = 'experiments/actor_critic/eval/pkl/ep000010'
+    # pred_root = 'experiments/sep_vqvae/eval/pkl/ep000500'#
+    # pred_root = 'experiments/sep_vqvae_root/eval/pkl/ep000500'# root
+    # pred_root = 'experiments/actor_critic/eval/pkl/ep000010' # ac
+    pred_root = 'experiments/cc_motion_gpt/eval/pkl/ep000400'
     print('Calculating and saving features')
-    calc_and_save_feats(gt_root)
+    # calc_and_save_feats(gt_root) ground truth
     calc_and_save_feats(pred_root)
 
 

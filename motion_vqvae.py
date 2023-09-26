@@ -159,7 +159,7 @@ class MoQ():
                                 quants[self.dance_names[i_eval]] = model.module.encode(src_pos_eval)[0].cpu().data.numpy()[0]
                         else:
                             quants = None
-                    visualizeAndWrite(results, config,self.visdir, self.dance_names, epoch_i, quants)
+                    # visualizeAndWrite(results, config,self.visdir, self.dance_names, epoch_i, quants)
                 model.train()
             self.schedular.step()  
 
@@ -174,6 +174,7 @@ class MoQ():
             self.device = torch.device('cuda' if config.cuda else 'cpu')
             print("Evaluation...")
             checkpoint = torch.load(ckpt_path)
+            print(ckpt_path)
             self.model.load_state_dict(checkpoint['model'])
             self.model.eval()
 

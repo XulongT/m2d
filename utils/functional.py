@@ -166,7 +166,7 @@ def visualize_json(fname_iter, image_dir, dance_name, dance_path, config, quant=
     img.save(os.path.join(f'{image_dir}/{dance_name}', f'frame{j:06d}.png'))
 
 
-def visualize(config, the_dance_names, expdir, epoch, quants=None, worker_num=16):
+def visualize(config, the_dance_names, expdir, epoch, quants=None, worker_num=8):
     epoch = int(epoch)
     json_dir = os.path.join(expdir, "jsons", f"ep{epoch:06d}")
 
@@ -194,9 +194,9 @@ def visualize(config, the_dance_names, expdir, epoch, quants=None, worker_num=16
                     downsample_rate = max(len(fnames) // len(qs), 1)
                     quant_lists.append(qs.repeat(downsample_rate).tolist())
                 quant_list = [tuple(qlist[ii] for qlist in quant_lists) for ii in range(len(quant_lists[0]))]
-            # while len(quant_list) < len(dance_names):
-            # print(quants)
-            # print(len(fnames), len(quants[dance_name]))
+            while len(quant_list) < len(dance_names):
+            print(quants)
+            print(len(fnames), len(quants[dance_name]))
             else:
                 downsample_rate = max(len(fnames) // len(quants[dance_name]), 1)
                 quant_list = quants[dance_name].repeat(downsample_rate).tolist()
@@ -601,6 +601,8 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
             # if tot > 100:
             #     break
     music_np = np.stack(music_data).reshape(-1, music_data[0].shape[1])
+
+
     music_mean = music_np.mean(0)
     music_std = music_np.std(0)
     music_std[(np.abs(music_mean) < 1e-5) & (np.abs(music_std) < 1e-5)] = 1

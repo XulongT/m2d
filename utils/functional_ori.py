@@ -552,7 +552,7 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
         #     np_music = np.array(sample_dict['music_array'])
         try:
             with open(path, 'r') as f:
-                print(path)
+                # print(path)
                 sample_dict = json.loads(f.read())
                 np_music = np.array(sample_dict.get('music_array', []))  # 添加一个默认值，以防 music_array 不存在
                 if external_wav is not None:
@@ -566,6 +566,7 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
 
                 if not rotmat:
                     root = np_dance[:, :3]  # the root
+                    # print(root.shape)
                     np_dance = np_dance - np.tile(root, (1, 24))  # Calculate relative offset with respect to root
                     np_dance[:, :3] = root
 
@@ -630,7 +631,10 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
             # tot += 1
             # if tot > 100:
             #     break
-    music_np = np.stack(music_data).reshape(-1, music_data[0].shape[1])
+    # music_np = np.stack(music_data).reshape(-1, music_data[0].shape[1])
+    #强缩
+    music_data_float16 = [item.astype(np.float16) for item in music_data]
+    music_np = np.stack(music_data_float16).reshape(-1, music_data[0].shape[1])
     music_mean = music_np.mean(0)
     music_std = music_np.std(0)
     music_std[(np.abs(music_mean) < 1e-5) & (np.abs(music_std) < 1e-5)] = 1
@@ -660,7 +664,7 @@ def load_test_data(data_dir, data_type='2D'):
     tot = 0
     music_data, dance_data = [], []
     fnames = sorted(os.listdir(data_dir))
-    print(fnames)
+    # print(fnames)
     # fnames = fnames[:60]  # For debug
     for fname in fnames:
         path = os.path.join(data_dir, fname)
