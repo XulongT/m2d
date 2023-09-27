@@ -112,7 +112,7 @@ data:
     train_dir: data/aistpp_test_full_wav # There's no problem here. Don't doubt
     test_dir: data/aistpp_test_full_wav
    
-    seq_len: 240
+    seq_len: 120
     data_type: None
 testing:
     height: 540
