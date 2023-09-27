@@ -622,13 +622,15 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
 
                     music_sub_seq = np_music[i_sample: i_sample + interval_sample]
                     dance_sub_seq = np_dance[:, i: i + interval, :]
+                    # print(f"mss: {music_sub_seq.shape}")
+                    # print(f"dss: {dance_sub_seq.shape}")
 
-                    if len(music_sub_seq) == interval_sample and len(dance_sub_seq) == interval:
+                    if music_sub_seq.shape[0] == interval_sample and dance_sub_seq.shape[1] == interval:
                         padding_sample = wav_padding // music_sample_rate
                         # Add paddings/context of music
                         music_sub_seq_pad = np.zeros((interval_sample + padding_sample * 2, dim),
                                                      dtype=music_sub_seq.dtype)
-
+                        print("jjcn")
                         if padding_sample > 0:
                             music_sub_seq_pad[padding_sample:-padding_sample] = music_sub_seq
                             start_sample = padding_sample if i_sample > padding_sample else i_sample
@@ -646,15 +648,20 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
                         else:
                             music_sub_seq_pad = music_sub_seq
                         music_data.append(music_sub_seq_pad)
+                        # print(f"md:{music_data.shape}")
                         dance_data.append(dance_sub_seq)
+                        print(f"Length of music_data: {len(music_data)}")
+                        print(f"Length of dance_data: {len(dance_data)}")
+
                         tot += 1
                         # if tot > 1:
                         #     break
             else:
                 music_data.append(np_music)
+                # print(f"md2:{music_data.shape}")
                 dance_data.append(np_dance)
-
-
+                print(f"Length of music_data: {len(music_data)}")
+                print(f"Length of dance_data: {len(dance_data)}")
 
             # if tot > 1:
             #     break
@@ -665,6 +672,10 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
     # music_np = np.stack(music_data).reshape(-1, music_data[0].shape[1])
     #强缩
     music_data_float16 = [item.astype(np.float16) for item in music_data]
+    if not music_data_float16:
+        print("Warning: music_data_float16 is empty. Check data loading process.")
+        return None  # 或任何其他合适的默认行为
+
     music_np = np.stack(music_data_float16).reshape(-1, music_data[0].shape[1])
     music_mean = music_np.mean(0)
     music_std = music_np.std(0)
