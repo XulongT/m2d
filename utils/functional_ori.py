@@ -16,6 +16,7 @@ from PIL import Image
 from .keypoint2img import read_keypoints
 from multiprocessing import Pool
 from functools import partial
+from extractor438 import extract_acoustic_feature_from_file
 from tqdm import tqdm
 import pickle
 import cv2
@@ -27,6 +28,7 @@ from scipy.spatial.transform import Rotation as R
 
 import os
 import shutil
+
 
 def eye(n, batch_shape):
     iden = np.zeros(np.concatenate([batch_shape, [n, n]]))
@@ -508,8 +510,12 @@ def load_data(data_dir, interval=900, data_type='2D'):
         fnames.remove(".ipynb_checkpoints")
     for fname in fnames:
         path = os.path.join(data_dir, fname)
-        with open(path) as f:
+        with open(path, 'r') as f:
+            # print(path)
             sample_dict = json.loads(f.read())
+            print("ld Contents of sample_dict for file:", path)
+            print(sample_dict.keys())
+
             np_music = np.array(sample_dict['music_array'])
             np_dance = np.array(sample_dict['dance_array'])
             if data_type == '2D':
@@ -534,96 +540,128 @@ def load_data(data_dir, interval=900, data_type='2D'):
     return music_data, dance_data
     # , [fn.replace('.json', '') for fn in fnames]
 
+#如果dances  musics长度不一样进行裁剪
+def align_data(np_music, np_dance, root=None):
+    min_len = min(np_music.shape[0], np_dance.shape[1])
+
+    np_music = np_music[:min_len, :]
+    np_dance = np_dance[:, :min_len, :]
+
+    if root is not None:
+        root = root[:, :min_len, :]
+        return np_music, np_dance, root
+    else:
+        return np_music, np_dance
+
 
 def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=None, external_wav_rate=1, music_normalize=False, wav_padding=0):
     tot = 0
     music_data, dance_data = [], []
-    fnames = sorted(os.listdir(data_dir))
-    # print(fnames)
-    # fnames = fnames[:10]  # For debug
-    
-    if ".ipynb_checkpoints" in fnames:
-        fnames.remove(".ipynb_checkpoints")
-    for fname in fnames:
-        path = os.path.join(data_dir, fname)
-        # with open(path) as f:
-        #     # print(path)
-        #     sample_dict = json.loads(f.read())
-        #     np_music = np.array(sample_dict['music_array'])
-        try:
-            with open(path, 'r') as f:
-                # print(path)
-                sample_dict = json.loads(f.read())
-                np_music = np.array(sample_dict.get('music_array', []))  # 添加一个默认值，以防 music_array 不存在
-                if external_wav is not None:
-                    wav_path = os.path.join(external_wav, fname.split('_')[-2] + '.json')
-                    # print('load from external wav!')
-                    with open(wav_path) as ff:
-                        sample_dict_wav = json.loads(ff.read())
-                        np_music = np.array(sample_dict_wav['music_array']).astype(np.float32)
 
-                np_dance = np.array(sample_dict['dance_array'])
+    ##直接嗯读##
+    musics_dir = "./musics"
+    motions_dir = "./motions_smpl_max"
 
-                if not rotmat:
-                    root = np_dance[:, :3]  # the root
-                    # print(root.shape)
-                    np_dance = np_dance - np.tile(root, (1, 24))  # Calculate relative offset with respect to root
-                    np_dance[:, :3] = root
+    # if ".ipynb_checkpoints" in fnames:
+    #     fnames.remove(".ipynb_checkpoints")
 
-                music_sample_rate = external_wav_rate if external_wav is not None else 1
-                # print('music_sample_rate', music_sample_rate)
-                # print(music_sample_rate)
-                if interval is not None:
-                    seq_len, dim = np_music.shape
-                    for i in range(0, seq_len, move):
-                        i_sample = i // music_sample_rate
-                        interval_sample = interval // music_sample_rate
+    #wav文件读完直接438
+    wav_files = sorted([f for f in os.listdir(musics_dir) if f.endswith('.wav')])
+    for wav_file in wav_files:
+        wav_path = os.path.join(musics_dir, wav_file)
+        pkl_file = wav_file.replace('.wav', '.pkl')
+        pkl_path = os.path.join(motions_dir, pkl_file)
+        # 直接读取音乐wav然后438处理
+        np_music = extract_acoustic_feature_from_file(wav_path)
+        print(np_music.shape)
+        with open(pkl_path, 'rb') as f:
+            pkl_data = pickle.load(f)
+            np_dance = pkl_data['smpl_poses']
 
-                        music_sub_seq = np_music[i_sample: i_sample + interval_sample]
-                        dance_sub_seq = np_dance[i: i + interval]
+            #这个external_wav 干嘛的
+            # if external_wav is not None:
+            #     wav_path = os.path.join(external_wav, fname.split('_')[-2] + '.json')
+            #     # print('load from external wav!')
+            #     with open(wav_path) as ff:
+            #         sample_dict_wav = json.loads(ff.read())
+            #         np_music = np.array(sample_dict_wav['music_array']).astype(np.float32)
+            #         print(f"np music 的shape{np_music.shape}")
 
-                        if len(music_sub_seq) == interval_sample and len(dance_sub_seq) == interval:
-                            padding_sample = wav_padding // music_sample_rate
-                            # Add paddings/context of music
-                            music_sub_seq_pad = np.zeros((interval_sample + padding_sample * 2, dim),
-                                                         dtype=music_sub_seq.dtype)
+            print(f"np dance 的shape{np_dance.shape}")
 
-                            if padding_sample > 0:
-                                music_sub_seq_pad[padding_sample:-padding_sample] = music_sub_seq
-                                start_sample = padding_sample if i_sample > padding_sample else i_sample
-                                end_sample = padding_sample if i_sample + interval_sample + padding_sample < seq_len else seq_len - (
-                                            i_sample + interval_sample)
-                                # print(end_sample)
-                                music_sub_seq_pad[padding_sample - start_sample:padding_sample] = np_music[
-                                                                                                  i_sample - start_sample:i_sample]
-                                if end_sample == padding_sample:
-                                    music_sub_seq_pad[-padding_sample:] = np_music[
-                                                                          i_sample + interval_sample:i_sample + interval_sample + end_sample]
-                                else:
-                                    music_sub_seq_pad[-padding_sample:-padding_sample + end_sample] = np_music[
-                                                                                                      i_sample + interval_sample:i_sample + interval_sample + end_sample]
+            if not rotmat:
+                root = pkl_data['root_trans']  # the root
+                print(f"root shape: {root.shape}")
+                # 对齐
+                np_music, np_dance, root = align_data(np_music, np_dance, root)
+                print(f"np dance 的shape{np_dance.shape}")
+                # 重新整形root_trans为(k, n, 1, 3)
+                expanded_root_trans = root[:, :, np.newaxis, :]
+
+                # 将它复制24次以匹配dance数据的维度
+                tiled_root_trans = np.tile(expanded_root_trans, (1, 1, 24, 1))
+
+                # 重新整形tiled_root_trans为(k, n, 72) k就是人数（最大化为7） n就是序列长度
+                reshaped_root_trans = np.reshape(tiled_root_trans, (root.shape[0], root.shape[1], -1))
+
+                # 计算相对位置 并赋值给np_dance
+                np_dance = np_dance - reshaped_root_trans
+            #如果不需要root
+            else:
+                np_music, np_dance = align_data(np_music, np_dance)
+
+            music_sample_rate = external_wav_rate if external_wav is not None else 1
+            # print('music_sample_rate', music_sample_rate)
+            # print(music_sample_rate)
+            if interval is not None:
+                seq_len, dim = np_music.shape
+                print(f"np_music的 shape{np_music.shape}")
+                for i in range(0, seq_len, move):
+                    i_sample = i // music_sample_rate
+                    interval_sample = interval // music_sample_rate
+
+                    music_sub_seq = np_music[i_sample: i_sample + interval_sample]
+                    dance_sub_seq = np_dance[:, i: i + interval, :]
+                    # print(f"mss: {music_sub_seq.shape}")
+                    # print(f"dss: {dance_sub_seq.shape}")
+
+                    if music_sub_seq.shape[0] == interval_sample and dance_sub_seq.shape[1] == interval:
+                        padding_sample = wav_padding // music_sample_rate
+                        # Add paddings/context of music
+                        music_sub_seq_pad = np.zeros((interval_sample + padding_sample * 2, dim),
+                                                     dtype=music_sub_seq.dtype)
+                        print("jjcn")
+                        if padding_sample > 0:
+                            music_sub_seq_pad[padding_sample:-padding_sample] = music_sub_seq
+                            start_sample = padding_sample if i_sample > padding_sample else i_sample
+                            end_sample = padding_sample if i_sample + interval_sample + padding_sample < seq_len else seq_len - (
+                                        i_sample + interval_sample)
+                            # print(end_sample)
+                            music_sub_seq_pad[padding_sample - start_sample:padding_sample] = np_music[
+                                                                                              i_sample - start_sample:i_sample]
+                            if end_sample == padding_sample:
+                                music_sub_seq_pad[-padding_sample:] = np_music[
+                                                                      i_sample + interval_sample:i_sample + interval_sample + end_sample]
                             else:
-                                music_sub_seq_pad = music_sub_seq
-                            music_data.append(music_sub_seq_pad)
-                            dance_data.append(dance_sub_seq)
-                            tot += 1
-                            # if tot > 1:
-                            #     break
-                else:
-                    music_data.append(np_music)
-                    dance_data.append(np_dance)
+                                music_sub_seq_pad[-padding_sample:-padding_sample + end_sample] = np_music[
+                                                                                                  i_sample + interval_sample:i_sample + interval_sample + end_sample]
+                        else:
+                            music_sub_seq_pad = music_sub_seq
+                        music_data.append(music_sub_seq_pad)
+                        # print(f"md:{music_data.shape}")
+                        dance_data.append(dance_sub_seq)
+                        print(f"Length of music_data: {len(music_data)}")
+                        print(f"Length of dance_data: {len(dance_data)}")
 
-        except FileNotFoundError:
-            print(f"File not found: {path}")
-            continue #直接跳
-        except json.JSONDecodeError as e:
-            print(f"JSON decoding error in file {path}: {str(e)}")
-            continue
-        except Exception as e:
-            print(f"An error occurred in file {path}: {str(e)}")
-            continue
-
-
+                        tot += 1
+                        # if tot > 1:
+                        #     break
+            else:
+                music_data.append(np_music)
+                # print(f"md2:{music_data.shape}")
+                dance_data.append(np_dance)
+                print(f"Length of music_data: {len(music_data)}")
+                print(f"Length of dance_data: {len(dance_data)}")
 
             # if tot > 1:
             #     break
@@ -634,6 +672,10 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
     # music_np = np.stack(music_data).reshape(-1, music_data[0].shape[1])
     #强缩
     music_data_float16 = [item.astype(np.float16) for item in music_data]
+    if not music_data_float16:
+        print("Warning: music_data_float16 is empty. Check data loading process.")
+        return None  # 或任何其他合适的默认行为
+
     music_np = np.stack(music_data_float16).reshape(-1, music_data[0].shape[1])
     music_mean = music_np.mean(0)
     music_std = music_np.std(0)
@@ -645,13 +687,14 @@ def load_data_aist(data_dir, interval=120, move=40, rotmat=False, external_wav=N
     if music_normalize:
         print('calculating norm mean and std')
         music_data_norm = [ (music_sub_seq - music_mean) / (music_std + 1e-10) for music_sub_seq in music_data ]
-        with open('/mnt/lustressd/lisiyao1/dance_experiements/music_norm.json', 'w') as fff:
-            sample_dict = {
-                'music_mean': music_mean.tolist(), # musics[idx+i],
-                'music_std': music_std.tolist()
-            }
-            # print(sample_dict)
-            json.dump(sample_dict, fff)
+        # 如何保存这个均值？ 是否需要保存
+        # with open('/mnt/lustressd/lisiyao1/dance_experiements/music_norm.json', 'w') as fff:
+        #     sample_dict = {
+        #         'music_mean': music_mean.tolist(), # musics[idx+i],
+        #         'music_std': music_std.tolist()
+        #     }
+        #     # print(sample_dict)
+        #     json.dump(sample_dict, fff)
     else:
         music_data_norm = music_data 
 
